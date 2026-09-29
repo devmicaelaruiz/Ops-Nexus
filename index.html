@@ -27,10 +27,16 @@ h3{font-size:13px;margin:0 0 12px;text-transform:uppercase;color:var(--mut);lett
 .login{max-width:340px;margin:12vh auto;padding:0 16px}.err{color:#c0392b;margin:8px 0}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:6px}.row span{flex:1}
 @media(max-width:700px){.app{flex-direction:column}.side{width:100%;display:flex;flex-wrap:wrap;padding:8px}.side h1,.side .me{display:none}}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--bd);margin-bottom:14px;flex-wrap:wrap}.tabs a{padding:8px 14px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent}.tabs a.on{color:var(--ac);border-color:var(--ac);font-weight:600}
+.split{display:flex;gap:16px;align-items:flex-start}.lft{flex:1;min-width:0}.chat{width:360px;flex-shrink:0;position:sticky;top:10px}#msgs{overflow-y:auto;max-height:46vh;margin-bottom:10px}.msg{border-bottom:1px solid var(--bd);padding:8px 0;white-space:pre-wrap}.lbl{font-size:11px;color:var(--mut);text-transform:uppercase;margin-top:6px}.br{display:flex;gap:8px;align-items:center;margin-bottom:6px}.bl{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bt{flex:1;background:var(--bd);border-radius:4px;height:14px}.bf{background:var(--ac);height:100%;border-radius:4px}.kp{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}.kp .card{margin:0}.kp b{font-size:26px;display:block}@media(max-width:900px){.split{flex-direction:column}.chat{width:100%;position:static}}
 </style></head><body><div id="root"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-const SUPABASE_URL='https://rimvxtaqeqjoffzwircd.supabase.co',SUPABASE_KEY='sb_publishable_iHtvkRXlI1okTnubeAb_aA_a5xXomXM';
+const SUPABASE_URL='https://TU-PROYECTO.supabase.co',SUPABASE_KEY='TU_ANON_PUBLIC_KEY';
+const SCHEMA_REQ=2; // sube este número junto con schema.sql cuando cambie la base
+let dbv=SCHEMA_REQ;
+const verBanner=()=>dbv>=SCHEMA_REQ?'':`<div class="card" style="border-color:#c0392b">⚠ ${isA()?`La base de datos está desactualizada (versión ${dbv}, la web requiere ${SCHEMA_REQ}). Ejecuta <b>schema.sql</b> en el SQL Editor de Supabase o haz push de la migración.`:'El sistema está en actualización; algunas funciones podrían fallar. Avisa al administrador.'}</div>`;
 const F=[
 ['requester','Solicitante','text','General'],['requestedAt','Fecha y hora del pedido original','datetime','General'],['summary','Resumen de avance','area','General'],['pm','PM encargado','user','General'],['platforms','Plataformas','plat','General'],['format','Formato','fmt','General'],['estado','Estado Detalle','text','General'],
 ['reqSent','Formato de requerimientos enviado','bool','Alcance y comercial'],['reqSentAt','Fecha de envío del formato','date','Alcance y comercial'],['dAlcance','Entrega Documento de Alcance','date','Alcance y comercial'],['dPropuesta','Entrega Propuesta Comercial','date','Alcance y comercial'],['dCliente','Entrega del proyecto al Cliente','date','Alcance y comercial'],['dEntrega','Fecha de Entrega','date','Alcance y comercial'],['limite','Fecha límite para iniciar el proyecto','date','Alcance y comercial'],['producto','Producto','text','Alcance y comercial'],
@@ -40,15 +46,18 @@ const F=[
 ['qaCliResp','QA Cliente - Responsable','text','Pruebas QA Cliente'],['qaCliIni','QA Cliente - Fecha Inicio','date','Pruebas QA Cliente'],['qaCliFin','QA Cliente - Fecha Fin','date','Pruebas QA Cliente'],['cierre','Cierre de Validación del Cliente','date','Pruebas QA Cliente']];
 const ST=['Nuevo','En análisis','En desarrollo','QA','Entregado','Cerrado'];
 const AST0=['requester','requestedAt','summary','pm','estado'];
-const DEF={platforms:['Five9','Zendesk'],formats:['Proyecto','Evolutivo','Deuda técnica','Demo'],custom:[],perms:{tecnico:{create:true,edit:true,viewAll:true,status:true,delete:false},asistente:{edit:true,status:true}},fields:{...Object.fromEntries(F.map(f=>[f[0],{show:true,req:false,ast:AST0.includes(f[0]),fmts:[]}])),status:{show:true}}};
-const PERMS=[['create','Crear tickets'],['edit','Editar tickets / campos'],['viewAll','Ver todos los tickets'],['status','Cambiar estado'],['delete','Eliminar tickets']];
-let db,cfg=DEF,users=[],tickets=[],me=null,view='list',cur=null,err='',q='',fq='',loaded=0,setup=false;
+const DEF={platforms:['Five9','Zendesk'],formats:['Proyecto','Evolutivo','Deuda técnica','Demo'],custom:[],userPerms:{},views:[{id:'all',name:'Todos',cols:['n','title','requester','pm','format','platforms','status','dEntrega','upd'],filter:{},who:{roles:['tecnico','asistente'],users:[]}}],dashes:[{id:'gen',name:'General',who:{roles:['tecnico'],users:[]},widgets:[{id:'w1',type:'kpi',title:'Total',by:'total',f:{}},{id:'w2',type:'kpi',title:'Abiertos',by:'open',f:{}},{id:'w3',type:'kpi',title:'Sin actualización',by:'stale',f:{}},{id:'w4',type:'kpi',title:'Entregas en 7 días',by:'soon',f:{}},{id:'w5',type:'bar',title:'Por estado',by:'status',f:{}},{id:'w6',type:'donut',title:'Por formato',by:'format',f:{}},{id:'w7',type:'bar',title:'Por plataforma',by:'platforms',f:{}},{id:'w8',type:'bar',title:'Por PM',by:'pm',f:{}},{id:'w9',type:'list',title:'Tickets sin actualización',by:'',f:{}}]}],perms:{tecnico:{create:true,edit:true,viewAll:true,status:true,delete:false,chat:true,dashboard:true,export:true},asistente:{create:false,edit:true,viewAll:false,status:true,delete:false,chat:true,dashboard:false,export:false}},fields:{...Object.fromEntries(F.map(f=>[f[0],{show:true,req:false,ast:AST0.includes(f[0]),fmts:[]}])),status:{show:true}}};
+const PERMS=[['create','Crear tickets'],['edit','Editar tickets / campos'],['viewAll','Ver todos los tickets'],['status','Cambiar estado'],['delete','Eliminar tickets'],['chat','Chat / actualizaciones'],['dashboard','Ver dashboard'],['export','Exportar PDF']];
+let upd=[],vi='',di='',opn={},db,cfg=DEF,users=[],tickets=[],me=null,view='list',cur=null,err='',q='',fq='',loaded=0,setup=false;
 const $=s=>document.querySelector(s),R=document.getElementById('root');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hash=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('pm:'+s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const isA=()=>me?.role==='admin',isT=()=>me?.role==='tecnico',isS=()=>me?.role==='asistente';
 const allF=()=>F.concat((cfg.custom||[]).map(c=>[c.key,c.label,c.type,c.group||'Personalizados',c.opts]));
-const can=p=>isA()||!!cfg.perms?.[me?.role]?.[p];
+const can=p=>isA()||(cfg.userPerms?.[me?.id]?.[p]??!!cfg.perms?.[me?.role]?.[p]);
+const ago=t=>{const d=t.last_update_at||t.created_at;if(!d)return '—';const n=Math.floor((Date.now()-new Date(d))/864e5);return n<1?'hoy':'hace '+n+' d'};
+const rd=t=>t.remindDays===undefined||t.remindDays===''||t.remindDays===null?7:+t.remindDays;
+const stale=t=>!['Entregado','Cerrado'].includes(t.status)&&rd(t)>0&&(Date.now()-new Date(t.last_update_at||t.created_at))/864e5>rd(t);
 const fc=k=>cfg.fields[k]||{show:true,req:false,ast:false,fmts:[]};
 const inFmt=(k,t)=>{const m=fc(k).fmts||[];return !m.length||m.includes(t.format)};
 const fmtD=v=>v?String(v).replace('T',' '):'—';
@@ -58,19 +67,19 @@ async function boot(){
   const {data:{user}}=await sb.auth.getUser();
   const {data:p}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
   if(!p){await sb.auth.signOut();err='Tu usuario no tiene perfil. Contacta al admin.';return render()}
-  me=p;await load();render();
+  me=p;const sv=await sb.rpc('schema_version');dbv=sv.error?0:sv.data;await load();render();
   clearInterval(window._iv);window._iv=setInterval(async()=>{if(me&&view==='list'&&!document.activeElement?.matches('input,select')){await load();render()}},30000)}
 async function load(){
   const [c,u,t]=await Promise.all([sb.from('config').select('data').eq('id',1).maybeSingle(),sb.from('profiles').select('*'),sb.from('tickets').select('*').order('n',{ascending:false})]);
-  const d=c.data?.data;if(d)cfg={...DEF,...d,custom:d.custom||[],fields:{...DEF.fields,...(d.fields||{})},perms:{tecnico:{...DEF.perms.tecnico,...(d.perms?.tecnico||{})},asistente:{...DEF.perms.asistente,...(d.perms?.asistente||{})}}};
-  users=u.data||[];tickets=(t.data||[]).map(r=>({...r.data,id:r.id,n:r.n,pm:r.pm,assistants:r.assistants||[]}))}
-function visibleTickets(){return isS()?tickets.filter(t=>(t.assistants||[]).includes(me.id)):(isT()&&!can('viewAll'))?tickets.filter(t=>t.pm===me.id):tickets}
+  const d=c.data?.data;if(d)cfg={...DEF,...d,custom:d.custom||[],userPerms:d.userPerms||{},views:d.views||DEF.views,dashes:d.dashes||DEF.dashes,fields:{...DEF.fields,...(d.fields||{})},perms:{tecnico:{...DEF.perms.tecnico,...(d.perms?.tecnico||{})},asistente:{...DEF.perms.asistente,...(d.perms?.asistente||{})}}};
+  users=u.data||[];tickets=(t.data||[]).map(r=>({...r.data,id:r.id,n:r.n,pm:r.pm,assistants:r.assistants||[],last_update_at:r.last_update_at,created_at:r.created_at}))}
+function visibleTickets(){return can('viewAll')?tickets:tickets.filter(t=>t.pm===me.id||(t.assistants||[]).includes(me.id))}
 function fieldsFor(t){return allF().filter(f=>fc(f[0]).show&&inFmt(f[0],t)&&(!isS()||fc(f[0]).ast))}
 function render(){
   if(!me){return loginView()}
   const nav=(v,l)=>`<a class="${view===v?'on':''}" onclick="go('${v}')">${l}</a>`;
-  let body=view==='ticket'||view==='new'?ticketView():view==='users'?usersView():view==='config'?configView():listView();
-  R.innerHTML=`<div class="app"><div class="side"><h1>◼ PM Desk</h1>${nav('list','Tickets')}${isA()?nav('users','Usuarios')+nav('config','Configuración'):''}<a onclick="logout()">Salir</a><div class="me">${esc(me.name)}<br>Rol: ${me.role}</div></div><div class="main">${body}</div></div>`}
+  let body=view==='dash'?dashView():view==='ticket'||view==='new'?ticketView():view==='users'?usersView():view==='config'?configView():listView();
+  R.innerHTML=`<div class="app"><div class="side"><h1>◼ PM Desk</h1>${nav('list','Tickets')}${can('dashboard')?nav('dash','Dashboard'):''}${isA()?nav('users','Usuarios')+nav('config','Configuración'):''}<a onclick="logout()">Salir</a><div class="me">${esc(me.name)}<br>Rol: ${me.role}</div></div><div class="main">${verBanner()}${body}</div></div>`}
 function go(v){view=v;cur=null;err='';render()}
 function loginView(){
   R.innerHTML=`<div class="login"><div class="card"><h2>Iniciar sesión</h2><label>Email</label><input id="lu" type="email"><label style="margin-top:8px">Contraseña</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')doLogin()"><div class="err">${esc(err)}</div><button class="p" onclick="doLogin()">Entrar</button></div></div>`}
@@ -79,15 +88,31 @@ async function doLogin(){
   if(error){err='Credenciales incorrectas';return loginView()}
   err='';view='list';await boot()}
 async function logout(){await sb.auth.signOut();me=null;clearInterval(window._iv);render()}
+const okWho=x=>isA()||(x.who?.roles||[]).includes(me.role)||(x.who?.users||[]).includes(me.id);
+const myViews=()=>isA()?[{id:'__all',name:'Todos (admin)',cols:DEF.views[0].cols,filter:{},who:{}},...cfg.views]:cfg.views.filter(okWho);
+const myDash=()=>isA()?cfg.dashes:cfg.dashes.filter(okWho);
+const matchV=(t,f)=>(!f.status||t.status===f.status)&&(!f.format||t.format===f.format)&&(!f.platform||(t.platforms||[]).includes(f.platform))&&(!f.stale||stale(t))&&(!f.mine||t.pm===me.id||(t.assistants||[]).includes(me.id));
+const colDefs=()=>[['n','#'],['title','Asunto'],['status','Estado'],['upd','Actualización'],['assistants','Asistentes invitados']].concat(allF().map(f=>[f[0],f[1]]));
+const cell=(t,k)=>{const v=t[k];
+ if(k==='n')return '#'+t.n;if(k==='title')return `<b>${esc(t.title)}</b>`;
+ if(k==='status')return `<span class="b st-${esc(t.status)}">${esc(t.status)}</span>`;
+ if(k==='upd')return `<span style="color:${stale(t)?'#c0392b':'inherit'}">${stale(t)?'⏰ ':''}${ago(t)}</span>`;
+ if(k==='pm')return esc(uname(v));if(k==='assistants')return esc((v||[]).map(uname).join(', '));
+ if(k==='platforms')return (v||[]).map(p=>`<span class="b">${esc(p)}</span>`).join('');
+ if(v===true)return 'Sí';if(v===false||v===undefined||v==='')return '—';return esc(String(v).replace('T',' '))};
 function listView(){
-  const L=visibleTickets().filter(t=>(!q||JSON.stringify(t).toLowerCase().includes(q.toLowerCase()))&&(!fq||t.status===fq));
-  return `<div class="top"><h2>Tickets (${L.length})</h2><input style="width:200px" placeholder="Buscar..." value="${esc(q)}" oninput="q=this.value;renderList()"><select style="width:150px" onchange="fq=this.value;render()"><option value="">Todos los estados</option>${ST.map(s=>`<option ${fq===s?'selected':''}>${s}</option>`).join('')}</select>${!isS()&&can('create')?'<button class="p" onclick="newT()">+ Nuevo ticket</button>':''}</div>
-  <div class="tw card" style="padding:0"><table><thead><tr><th>#</th><th>Asunto</th><th>Solicitante</th><th>PM</th><th>Formato</th><th>Plataformas</th><th>Estado</th><th>Entrega</th></tr></thead><tbody id="tb">${rows(L)}</tbody></table>${L.length?'':'<p style="padding:16px;color:var(--mut)">Sin tickets.</p>'}</div>`}
-const rows=L=>L.map(t=>`<tr onclick="open_('${t.id}')"><td>#${t.n}</td><td><b>${esc(t.title)}</b></td><td>${esc(t.requester)}</td><td>${esc(uname(t.pm))}</td><td>${esc(t.format)}</td><td>${(t.platforms||[]).map(p=>`<span class="b">${esc(p)}</span>`).join('')}</td><td><span class="b st-${esc(t.status)}">${esc(t.status)}</span></td><td>${fmtD(t.dEntrega)}</td></tr>`).join('');
+  const vs=myViews(),v=vs.find(x=>x.id===vi)||vs[0],all=visibleTickets();
+  if(!v)return `<div class="top"><h2>Tickets</h2></div><div class="card">No tienes vistas asignadas. Pídele al admin que te asigne una.</div>`;
+  const cd=colDefs(),cols=v.cols.filter(k=>cd.some(c=>c[0]===k)),V=all.filter(t=>matchV(t,v.filter||{})),L=V.filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q.toLowerCase())),sn=V.filter(stale).length;
+  return `<div class="top"><h2>Tickets (${L.length})</h2><input style="width:200px" placeholder="Buscar..." value="${esc(q)}" oninput="q=this.value;renderList()">${can('create')?'<button class="p" onclick="newT()">+ Nuevo ticket</button>':''}</div>
+  <div class="tabs">${vs.map(x=>`<a class="${x.id===v.id?'on':''}" onclick="vi='${x.id}';render()">${esc(x.name)} <span class="b">${all.filter(t=>matchV(t,x.filter||{})).length}</span></a>`).join('')}</div>
+  ${sn?`<div class="card" style="border-color:var(--wa)">⏰ ${sn} ticket(s) de esta vista necesitan actualización.</div>`:''}
+  <div class="tw card" style="padding:0"><table><thead><tr>${cols.map(k=>`<th>${esc(cd.find(c=>c[0]===k)[1])}</th>`).join('')}</tr></thead><tbody>${L.map(t=>`<tr onclick="open_('${t.id}')">${cols.map(k=>`<td>${cell(t,k)}</td>`).join('')}</tr>`).join('')}</tbody></table>${L.length?'':'<p style="padding:16px;color:var(--mut)">Sin tickets.</p>'}</div>`}
 function renderList(){render();const i=$('input[placeholder="Buscar..."]');if(i){i.focus();i.setSelectionRange(q.length,q.length)}}
 const uname=id=>users.find(u=>u.id===id)?.name||id||'';
 function newT(){cur={title:'',status:'Nuevo',platforms:[],assistants:[],pm:me.id,requestedAt:new Date().toISOString().slice(0,16)};view='new';render()}
-function open_(id){cur=tickets.find(t=>t.id===id);view='ticket';render()}
+function open_(id){cur=tickets.find(t=>t.id===id);upd=[];view='ticket';render();if(can('chat'))loadUpd(id)}
+async function loadUpd(id){const r=await sb.from('ticket_updates').select('*').eq('ticket_id',id).order('created_at');upd=r.data||[];const m=$('#msgs');if(m){m.innerHTML=msgsHTML();m.scrollTop=m.scrollHeight}}
 function inp(f,v,dis){
   const [k,l,t]=f,a=`data-k="${k}" ${dis?'disabled':''}`;
   if(t==='area')return `<textarea ${a}>${esc(v)}</textarea>`;
@@ -102,17 +127,92 @@ function fmtChg(){cur=collect();render()}
 function ticketView(){
   const t=cur,fs=fieldsFor(t),groups=[...new Set(fs.map(f=>f[3]))],ro=!(t.id?can('edit'):can('create')),hid=allF().filter(f=>!fc(f[0]).show);
   const hd=k=>isA()?` <a style="cursor:pointer;color:var(--ac)" onclick="togF('${k}',false)">ocultar</a>`:'';
-  return `<div class="top"><button onclick="go('list')">← Volver</button><h2>${t.n?'#'+t.n+' · ':'Nuevo · '}${esc(t.title)||'Sin asunto'}</h2>${can('delete')&&!isS()&&t.id?'<button class="d" onclick="delT()">Eliminar</button>':''}${ro?'':'<button class="p" onclick="saveT()">Guardar</button>'}</div>
-  <div class="err">${esc(err)}</div>
-  <div class="card"><h3>Ticket</h3><div class="g"><div class="w"><label>Asunto *</label><input id="f_title" value="${esc(t.title)}" ${isS()||ro?'disabled':''}></div>${cfg.fields.status?.show!==false?`<div><label>Estado${hd('status')}</label><select id="f_status" ${ro||!can('status')?'disabled':''}>${ST.map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div>`:''}</div></div>
+  return `<div class="top"><button onclick="go('list')">← Volver</button><h2>${t.n?'#'+t.n+' · ':'Nuevo · '}${esc(t.title)||'Sin asunto'}</h2>${can('delete')&&t.id?'<button class="d" onclick="delT()">Eliminar</button>':''}${ro?'':'<button class="p" onclick="saveT()">Guardar</button>'}</div><div class="err">${esc(err)}</div>
+  <div class="split"><div class="lft">
+  <div class="card"><h3>Ticket</h3><div class="g"><div class="w"><label>Asunto *</label><input id="f_title" value="${esc(t.title)}" ${(isS()&&t.id)||ro?'disabled':''}></div>${cfg.fields.status?.show!==false?`<div><label>Estado${hd('status')}</label><select id="f_status" ${ro||!can('status')?'disabled':''}>${ST.map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div>`:''}${isA()?`<div><label>Recordatorio: días sin actualización (0 = apagado)</label><input id="f_remind" type="number" min="0" value="${t.remindDays??7}"></div>`:''}</div>${t.id?`<small style="color:var(--mut)">Última actualización: ${t.last_update_at?ago(t):'sin actualizaciones'}</small>`:''}</div>
   ${groups.map(g=>`<div class="card"><h3>${g}</h3><div class="g">${fs.filter(f=>f[3]===g).map(f=>`<div class="${f[2]==='area'||f[2]==='plat'?'w':''}"><label>${esc(f[1])}${fc(f[0]).req?' *':''}${hd(f[0])}</label>${inp(f,t[f[0]],ro)}</div>`).join('')}</div></div>`).join('')}
   ${isA()?assistPanel(t):''}
-  ${isA()?`<div class="card"><h3>Agregar campo al ticket</h3>${hid.length?`<div class="row"><select id="hf">${hid.map(f=>`<option value="${f[0]}">${esc(f[1])}</option>`).join('')}</select><button onclick="togF($('#hf').value,true)">Agregar</button></div>`:'<span style="color:var(--mut)">Todos los campos ya están en el ticket.</span>'}</div>`:''}`}
+  ${isA()?`<div class="card"><h3>Agregar campo al ticket</h3>${hid.length?`<div class="row"><select id="hf">${hid.map(f=>`<option value="${f[0]}">${esc(f[1])}</option>`).join('')}</select><button onclick="togF($('#hf').value,true)">Agregar</button></div>`:'<span style="color:var(--mut)">Todos los campos ya están en el ticket.</span>'}</div>`:''}
+  ${t.id&&can('export')?`<div class="card"><h3>Cierre del ticket</h3><p style="margin-top:0;color:var(--mut)">Exporta un PDF con los datos y todo el historial de actualizaciones.${can('delete')?' Luego puedes eliminar el ticket para liberar espacio en la base de datos.':''}</p><button onclick="exportPDF(false)">Exportar PDF</button> ${can('delete')?'<button class="d" onclick="exportPDF(true)">Exportar PDF y eliminar ticket</button>':''}</div>`:''}
+  </div>${t.id&&can('chat')?chatPanel():''}</div>`}
+const TPL=['- Qué se hizo:\n- Resultado / estado actual:\n- Bloqueos o riesgos:','- Responsable:\n- Acción:\n- Fecha compromiso:'];
+function msgsHTML(){return upd.map(u=>`<div class="msg"><b>${esc(u.author_name)}</b> <small style="color:var(--mut)">${new Date(u.created_at).toLocaleString()}</small>${isA()?` <a style="cursor:pointer;color:#c0392b" onclick="delMsg('${u.id}')">✕</a>`:''}${u.done?`<div class="lbl">Acciones realizadas / Update</div>${esc(u.done)}`:''}${u.next?`<div class="lbl">Próximo paso</div>${esc(u.next)}`:''}</div>`).join('')||'<small style="color:var(--mut)">Aún no hay actualizaciones.</small>'}
+function chatPanel(){return `<div class="card chat"><h3>Actualizaciones del ticket</h3><div id="msgs">${msgsHTML()}</div><label>Acciones realizadas / Update</label><textarea id="cm_done" placeholder="Qué se hizo desde la última actualización, resultado y bloqueos"></textarea><label style="margin-top:6px">Próximo paso</label><textarea id="cm_next" placeholder="Responsable · acción · fecha compromiso"></textarea><div class="row" style="margin-top:8px"><button onclick="tpl()">Usar plantilla</button><button class="p" onclick="sendU()">Publicar</button></div></div>`}
+function tpl(){$('#cm_done').value=TPL[0];$('#cm_next').value=TPL[1]}
+async function sendU(){const d=$('#cm_done').value.trim(),n=$('#cm_next').value.trim();if(!d&&!n)return;const r=await sb.from('ticket_updates').insert({ticket_id:cur.id,author_name:me.name,done:d,next:n});if(r.error)return alert(r.error.message);$('#cm_done').value='';$('#cm_next').value='';await loadUpd(cur.id);await load()}
+async function delMsg(id){if(confirm('¿Borrar esta actualización?')){await sb.from('ticket_updates').delete().eq('id',id);await loadUpd(cur.id)}}
+const cnt=a=>Object.entries(a.reduce((m,k)=>{k=k||'Sin asignar';m[k]=(m[k]||0)+1;return m},{})).sort((a,b)=>b[1]-a[1]);
+const bars=(t,e)=>{const mx=Math.max(1,...e.map(x=>x[1]));return `<div class="card"><h3>${t}</h3>${e.map(([k,v])=>`<div class="br"><span class="bl">${esc(k)}</span><div class="bt"><div class="bf" style="width:${v/mx*100}%"></div></div><b>${v}</b></div>`).join('')}</div>`};
+const COL=['#1f73b7','#1f9d55','#b7791f','#c0392b','#8e44ad','#16a085','#7f8c8d','#d35400'];
+const KPIS=[['total','Total'],['open','Abiertos'],['stale','Sin actualización'],['soon','Entregas en 7 días'],['closed','Entregados/Cerrados']],TYPES=[['kpi','Indicador (número)'],['bar','Barras'],['donut','Dona'],['list','Lista sin actualización']];
+const isOpen=t=>!['Entregado','Cerrado'].includes(t.status),soonD=t=>{const d=(new Date(t.dEntrega)-Date.now())/864e5;return t.dEntrega&&d<=7&&d>=-1};
+const byOpts=()=>[['status','Estado'],['assistants','Asistentes invitados']].concat(allF().filter(f=>['text','fmt','plat','user','bool','sel'].includes(f[2])).map(f=>[f[0],f[1]]));
+const vals=(t,by)=>{const v=t[by];if(by==='pm')return [uname(v)];if(by==='assistants')return (v||[]).map(uname);if(Array.isArray(v))return v.length?v:[''];if(v===true)return ['Sí'];if(v===false||v===undefined)return [''];return [String(v)]};
+function widget(w,L0){
+  const L=L0.filter(t=>matchV(t,w.f||{})),T=esc(w.title||'');
+  if(w.type==='kpi'){const M={total:L,open:L.filter(isOpen),stale:L.filter(stale),soon:L.filter(t=>isOpen(t)&&soonD(t)),closed:L.filter(t=>!isOpen(t))};return `<div class="card"><small style="color:var(--mut)">${T}</small><b style="font-size:26px;display:block">${(M[w.by]||L).length}</b></div>`}
+  if(w.type==='list')return `<div class="card"><h3>${T}</h3>${L.filter(stale).map(t=>`<div class="row" style="cursor:pointer" onclick="open_('${t.id}')"><span>#${t.n} ${esc(t.title)}</span><span class="b st-Nuevo">${ago(t)}</span></div>`).join('')||'<span style="color:var(--mut)">Todo al día</span>'}</div>`;
+  const e=cnt(L.flatMap(t=>vals(t,w.by||'status')));
+  if(w.type==='donut'){const tot=e.reduce((a,x)=>a+x[1],0)||1;let a=0;const cs=e.map(([k,v],i)=>{const r=`${COL[i%8]} ${a/tot*100}% ${(a+v)/tot*100}%`;a+=v;return r});
+    return `<div class="card"><h3>${T}</h3><div class="row" style="align-items:flex-start;gap:16px"><div style="width:110px;height:110px;flex:none;border-radius:50%;background:conic-gradient(${cs.join(',')||'var(--bd) 0 100%'});-webkit-mask:radial-gradient(circle 32px,transparent 97%,#000 100%);mask:radial-gradient(circle 32px,transparent 97%,#000 100%)"></div><div>${e.map(([k,v],i)=>`<div><span style="display:inline-block;width:10px;height:10px;background:${COL[i%8]};margin-right:6px"></span>${esc(k)} <b>${v}</b></div>`).join('')}</div></div></div>`}
+  return bars(T,e)}
+function dashView(){
+  const ds=myDash(),d=ds.find(x=>x.id===di)||ds[0];
+  if(!d)return `<div class="top"><h2>Dashboard</h2></div><div class="card">No tienes dashboards asignados. Pídele al admin que te asigne uno.</div>`;
+  const L=visibleTickets();
+  return `<div class="top"><h2>Dashboard</h2>${isA()?'<button onclick="go(\'config\')">Editar dashboards</button>':''}</div>
+  <div class="tabs">${ds.map(x=>`<a class="${x.id===d.id?'on':''}" onclick="di='${x.id}';render()">${esc(x.name)}</a>`).join('')}</div>
+  <div class="g" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">${d.widgets.map(w=>widget(w,L)).join('')||'<span style="color:var(--mut)">Dashboard sin widgets.</span>'}</div>`}
+function up(l,i,fn){cfg[l]=cfg[l].map((x,n)=>{if(n!==i)return x;const c=JSON.parse(JSON.stringify(x));fn(c);return c});saveCfg()}
+const dt=(id,sum,body)=>`<details ${opn[id]?'open':''} ontoggle="opn['${id}']=this.open" style="border:1px solid var(--bd);border-radius:6px;padding:8px 12px;margin-bottom:8px"><summary style="cursor:pointer"><b>${sum}</b></summary><div style="margin-top:10px">${body}</div></details>`;
+const ck=(on,fn,l)=>`<label style="display:inline-block;margin:0 12px 4px 0;color:var(--tx)"><input type="checkbox" ${on?'checked':''} onchange="${fn}"> ${l}</label>`;
+const sl=(opts,cur,fn,all)=>`<select onchange="${fn}">${all?'<option value="">Todos</option>':''}${opts.map(o=>{const v=Array.isArray(o)?o[0]:o,l=Array.isArray(o)?o[1]:o;return `<option value="${esc(v)}" ${cur===v?'selected':''}>${esc(l)}</option>`}).join('')}</select>`;
+const audience=(l,i,x)=>`<label>Visible para</label>`+['tecnico','asistente'].map(r=>ck(x.who.roles.includes(r),`up('${l}',${i},x=>{x.who.roles=this.checked?[...x.who.roles,'${r}']:x.who.roles.filter(v=>v!=='${r}')})`,'Rol '+r)).join('')+'<br>'+users.filter(u=>u.role!=='admin').map(u=>ck(x.who.users.includes(u.id),`up('${l}',${i},x=>{x.who.users=this.checked?[...x.who.users,'${u.id}']:x.who.users.filter(v=>v!=='${u.id}')})`,esc(u.name))).join('');
+function vcard(){
+  const cd=colDefs(),nm=k=>cd.find(c=>c[0]===k)?.[1]||k;
+  return `<div class="card"><h3>Vistas de tickets (pestañas)</h3>${cfg.views.map((x,i)=>dt('v'+i,esc(x.name),`
+  <div class="g"><div><label>Nombre</label><input value="${esc(x.name)}" onchange="up('views',${i},x=>{x.name=this.value})"></div>
+  <div><label>Filtro: estado</label>${sl(ST,x.filter.status,`up('views',${i},x=>{x.filter.status=this.value})`,1)}</div>
+  <div><label>Filtro: formato</label>${sl(cfg.formats,x.filter.format,`up('views',${i},x=>{x.filter.format=this.value})`,1)}</div>
+  <div><label>Filtro: plataforma</label>${sl(cfg.platforms,x.filter.platform,`up('views',${i},x=>{x.filter.platform=this.value})`,1)}</div>
+  <div class="w">${ck(x.filter.stale,`up('views',${i},x=>{x.filter.stale=this.checked})`,'Solo sin actualización')}${ck(x.filter.mine,`up('views',${i},x=>{x.filter.mine=this.checked})`,'Solo míos (PM o invitado)')}</div></div>
+  <label style="margin-top:8px">Columnas de la vista</label>${cd.map(c=>ck(x.cols.includes(c[0]),`up('views',${i},x=>{x.cols=this.checked?[...x.cols,'${c[0]}']:x.cols.filter(k=>k!=='${c[0]}')})`,esc(c[1]))).join('')}
+  <div style="margin:8px 0"><label>Orden actual</label>${x.cols.map((k,j)=>`<span class="b">${j>0?`<a style="cursor:pointer" onclick="up('views',${i},x=>{[x.cols[${j-1}],x.cols[${j}]]=[x.cols[${j}],x.cols[${j-1}]]})">◀</a> `:''}${esc(nm(k))}${j<x.cols.length-1?` <a style="cursor:pointer" onclick="up('views',${i},x=>{[x.cols[${j}],x.cols[${j+1}]]=[x.cols[${j+1}],x.cols[${j}]]})">▶</a>`:''}</span>`).join('')}</div>
+  ${audience('views',i,x)}<div style="margin-top:10px"><button class="d" onclick="if(confirm('¿Eliminar vista?')){cfg.views.splice(${i},1);saveCfg()}">Eliminar vista</button></div>`)).join('')}
+  <button onclick="cfg.views=[...cfg.views,{id:'v'+Date.now(),name:'Nueva vista',cols:['n','title','status','upd'],filter:{},who:{roles:[],users:[]}}];saveCfg()">+ Nueva vista</button><br><small style="color:var(--mut)">Cada usuario ve solo las vistas (y columnas) asignadas a su rol o a su usuario. El admin ve todo.</small></div>`}
+function dcard(){
+  const bo=byOpts();
+  return `<div class="card"><h3>Dashboards</h3>${cfg.dashes.map((d,i)=>dt('d'+i,esc(d.name),`
+  <div class="g"><div><label>Nombre</label><input value="${esc(d.name)}" onchange="up('dashes',${i},x=>{x.name=this.value})"></div></div>
+  ${d.widgets.map((w,j)=>`<div class="card" style="padding:10px;margin:10px 0"><div class="g">
+   <div><label>Tipo</label>${sl(TYPES,w.type,`up('dashes',${i},x=>{x.widgets[${j}].type=this.value;x.widgets[${j}].by=this.value==='kpi'?'total':'status'})`)}</div>
+   <div><label>Título</label><input value="${esc(w.title)}" onchange="up('dashes',${i},x=>{x.widgets[${j}].title=this.value})"></div>
+   ${w.type==='list'?'':`<div><label>${w.type==='kpi'?'Métrica':'Agrupar por'}</label>${sl(w.type==='kpi'?KPIS:bo,w.by,`up('dashes',${i},x=>{x.widgets[${j}].by=this.value})`)}</div>`}
+   <div><label>Filtro: estado</label>${sl(ST,w.f?.status,`up('dashes',${i},x=>{x.widgets[${j}].f={...x.widgets[${j}].f,status:this.value}})`,1)}</div>
+   <div><label>Filtro: formato</label>${sl(cfg.formats,w.f?.format,`up('dashes',${i},x=>{x.widgets[${j}].f={...x.widgets[${j}].f,format:this.value}})`,1)}</div>
+   <div><label>Filtro: plataforma</label>${sl(cfg.platforms,w.f?.platform,`up('dashes',${i},x=>{x.widgets[${j}].f={...x.widgets[${j}].f,platform:this.value}})`,1)}</div></div>
+   <button class="d" style="margin-top:8px" onclick="up('dashes',${i},x=>{x.widgets.splice(${j},1)})">Quitar widget</button></div>`).join('')}
+  <button onclick="up('dashes',${i},x=>{x.widgets.push({id:'w'+Date.now(),type:'bar',title:'Nuevo gráfico',by:'status',f:{}})})">+ Agregar widget</button>
+  <div style="margin-top:10px">${audience('dashes',i,d)}</div><div style="margin-top:10px"><button class="d" onclick="if(confirm('¿Eliminar dashboard?')){cfg.dashes.splice(${i},1);saveCfg()}">Eliminar dashboard</button></div>`)).join('')}
+  <button onclick="cfg.dashes=[...cfg.dashes,{id:'d'+Date.now(),name:'Nuevo dashboard',widgets:[],who:{roles:[],users:[]}}];saveCfg()">+ Nuevo dashboard</button><br><small style="color:var(--mut)">Cada usuario ve solo los dashboards asignados a su rol o usuario (además necesita el permiso "Ver dashboard").</small></div>`}
+async function exportPDF(del){
+  const t=cur;if(!upd.length)await loadUpd(t.id);
+  const d=new window.jspdf.jsPDF({unit:'pt',format:'a4'}),W=595,M=40;let y=95;const chk=h=>{if(y+h>800){d.addPage();y=50}};
+  d.setFillColor(3,54,61);d.rect(0,0,W,70,'F');d.setTextColor(255);d.setFontSize(17);d.text(`#${t.n} · ${t.title}`,M,32,{maxWidth:W-2*M});d.setFontSize(9);d.text(`Estado: ${t.status} · PM: ${uname(t.pm)||'-'} · Generado: ${new Date().toLocaleString()}`,M,54);
+  let last='';allF().forEach(f=>{let v=t[f[0]];if(v===undefined||v===''||v===false||(Array.isArray(v)&&!v.length))return;v=f[0]==='pm'?uname(v):v===true?'Sí':Array.isArray(v)?v.join(', '):String(v).replace('T',' ');
+    if(f[3]!==last){chk(34);d.setFont('helvetica','bold');d.setFontSize(11);d.setTextColor(3,54,61);d.text(f[3].toUpperCase(),M,y);y+=16;last=f[3]}
+    const L=d.splitTextToSize(v,330);chk(L.length*12+4);d.setFont('helvetica','bold');d.setFontSize(9);d.setTextColor(90);d.text(f[1],M,y,{maxWidth:170});d.setFont('helvetica','normal');d.setTextColor(30);d.text(L,M+185,y);y+=L.length*12+4});
+  chk(50);y+=14;d.setFont('helvetica','bold');d.setFontSize(12);d.setTextColor(3,54,61);d.text('HISTORIAL DE ACTUALIZACIONES',M,y);y+=18;
+  upd.forEach(u=>{chk(30);d.setFont('helvetica','bold');d.setFontSize(9);d.setTextColor(30);d.text(`${u.author_name} · ${new Date(u.created_at).toLocaleString()}`,M,y);y+=13;
+    [['Acciones realizadas / Update',u.done],['Próximo paso',u.next]].forEach(([l,v])=>{if(!v)return;const L=d.splitTextToSize(v,W-2*M-10);chk(L.length*11+14);d.setFont('helvetica','bold');d.setTextColor(90);d.text(l,M+10,y);y+=11;d.setFont('helvetica','normal');d.setTextColor(30);d.text(L,M+10,y);y+=L.length*11+4});y+=6});
+  const n=d.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(8);d.setTextColor(120);d.text(`Pág. ${i} de ${n}`,W-M,825,{align:'right'})}
+  d.save(`ticket-${t.n}.pdf`);
+  if(del&&can('delete')&&confirm('PDF descargado. ¿Eliminar este ticket y su historial de la base de datos?')){await sb.from('tickets').delete().eq('id',t.id);await load();go('list')}}
 function togF(k,v){cur=collect();cfg.fields[k]={...fc(k),show:v};saveCfg();render()}
 function assistPanel(t){const as=users.filter(u=>u.role==='asistente'),inv=t.assistants||[];
   return `<div class="card"><h3>Asistentes invitados</h3>${inv.map(id=>`<span class="b">${esc(uname(id))} <a style="cursor:pointer" onclick="inviteRm('${id}')">✕</a></span>`).join('')||'<span style="color:var(--mut)">Ninguno</span>'}<div class="row" style="margin-top:10px"><select id="inv">${as.filter(u=>!inv.includes(u.id)).map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select><button onclick="invite()">Invitar</button></div><small style="color:var(--mut)">Crea asistentes en Usuarios. Se guarda al pulsar Guardar.</small></div>`}
 function collect(){
-  const t={...cur},ti=$('#f_title'),st=$('#f_status');if(ti&&!ti.disabled)t.title=ti.value.trim();if(st&&!st.disabled)t.status=st.value;
+  const t={...cur},ti=$('#f_title'),st=$('#f_status'),rm=$('#f_remind');if(rm)t.remindDays=+rm.value;if(ti&&!ti.disabled)t.title=ti.value.trim();if(st&&!st.disabled)t.status=st.value;
   document.querySelectorAll('[data-k]').forEach(e=>{if(e.disabled)return;t[e.dataset.k]=e.type==='checkbox'?e.checked:e.value});
   if(document.querySelector('[data-plat]'))t.platforms=[...document.querySelectorAll('[data-plat]:checked')].map(e=>e.dataset.plat);return t}
 function invite(){cur=collect();const v=$('#inv').value;if(v){cur.assistants=[...(cur.assistants||[]),v]}render()}
@@ -121,13 +221,12 @@ async function saveT(){
   const t=collect();if(!t.title){err='El asunto es obligatorio';return render()}
   const fs=fieldsFor(t),miss=fs.filter(f=>fc(f[0]).req&&!(f[2]==='plat'?(t.platforms||[]).length:t[f[0]]));
   if(miss.length){err='Campos requeridos: '+miss.map(f=>f[1]).join(', ');cur=t;return render()}
-  const {id:_i,n:_n,pm,assistants,...rest}=t;let r;
-  if(isS()){const o=tickets.find(x=>x.id===t.id),{id:_a,n:_b,pm:_c,assistants:_d,...al}=o;fs.forEach(f=>{if(rest[f[0]]!==undefined)al[f[0]]=rest[f[0]]});if(can('status'))al.status=rest.status;r=await sb.from('tickets').update({data:al}).eq('id',t.id)}
+  const {id:_i,n:_n,pm,assistants,last_update_at:_l,created_at:_r,...rest}=t;let r;
+  if(isS()&&t.id){const o=tickets.find(x=>x.id===t.id),{id:_a,n:_b,pm:_c,assistants:_d,last_update_at:_e,created_at:_f,...al}=o;fs.forEach(f=>{if(rest[f[0]]!==undefined)al[f[0]]=rest[f[0]]});if(can('status'))al.status=rest.status;r=await sb.from('tickets').update({data:al}).eq('id',t.id)}
   else if(t.id)r=await sb.from('tickets').update({pm:pm||null,assistants:assistants||[],data:rest}).eq('id',t.id);
-  else r=await sb.from('tickets').insert({pm:pm||null,assistants:assistants||[],data:rest});
+  else{const as=[...(assistants||[])];if(isS()&&!as.includes(me.id))as.push(me.id);r=await sb.from('tickets').insert({pm:pm||null,assistants:as,data:rest})}
   if(r.error){err=r.error.message;cur=t;return render()}
-  await load();
-  view='list';cur=null;err='';render()}
+  await load();view='list';cur=null;err='';render()}
 async function delT(){if(confirm('¿Eliminar este ticket?')){await sb.from('tickets').delete().eq('id',cur.id);await load();go('list')}}
 function usersView(){
   return `<div class="top"><h2>Usuarios</h2></div><div class="card"><h3>Nuevo usuario</h3><div class="g"><div><label>Nombre</label><input id="nn"></div><div><label>Email</label><input id="nu" type="email"></div><div><label>Contraseña (mín. 8)</label><input id="np" type="password"></div><div><label>Rol</label><select id="nr"><option value="tecnico">Técnico</option><option value="asistente">Asistente</option><option value="admin">Admin</option></select></div></div><div class="err">${esc(err)}</div><button class="p" onclick="addU()">Crear</button></div>
@@ -143,15 +242,19 @@ async function delU(id){if(confirm('¿Quitar acceso a este usuario?')){await sb.
 function configView(){
   const list=(key,l)=>`<div class="card"><h3>${l}</h3>${cfg[key].map((p,i)=>`<div class="row"><span>${esc(p)}</span><button class="d" onclick="rmC('${key}',${i})">Quitar</button></div>`).join('')}<div class="row"><input id="add_${key}" placeholder="Agregar..."><button onclick="addC('${key}')">Agregar</button></div></div>`;
   const cb=(c,k,x)=>`<td><input type="checkbox" ${c[k]?'checked':''} onchange="tgF('${x}','${k}',this.checked)"></td>`;
-  const perm=`<div class="card"><h3>Permisos por rol</h3><div class="tw"><table><thead><tr><th>Permiso</th><th>Técnico</th><th>Asistente</th></tr></thead><tbody>${PERMS.map(p=>`<tr style="cursor:default"><td>${p[1]}</td>${['tecnico','asistente'].map(r=>`<td>${r==='asistente'&&!['edit','status'].includes(p[0])?'—':`<input type="checkbox" ${cfg.perms[r][p[0]]?'checked':''} onchange="tgP('${r}','${p[0]}',this.checked)">`}</td>`).join('')}</tr>`).join('')}</tbody></table></div><small style="color:var(--mut)">Admin siempre tiene todo. El asistente solo ve tickets donde fue invitado. Sin "Ver todos", el técnico solo ve tickets donde es PM.</small></div>`;
+  const pcell=(r,p)=>`<td><input type="checkbox" ${cfg.perms[r][p]?'checked':''} onchange="tgP('${r}','${p}',this.checked)"></td>`;
+  const perm=`<div class="card"><h3>Permisos por rol</h3><div class="tw"><table><thead><tr><th>Permiso</th><th>Técnico</th><th>Asistente</th></tr></thead><tbody>${PERMS.map(p=>`<tr style="cursor:default"><td>${p[1]}</td>${pcell('tecnico',p[0])}${pcell('asistente',p[0])}</tr>`).join('')}</tbody></table></div><small style="color:var(--mut)">Admin siempre tiene todo. Sin "Ver todos", cada usuario solo ve tickets donde es PM o fue invitado.</small></div>`;
+  const uo=(u,p,v)=>{const c=cfg.userPerms?.[u]?.[p];return `<option value="${v}" ${(c===undefined?'':c?'1':'0')===v?'selected':''}>${v===''?'Rol':v==='1'?'Sí':'No'}</option>`};
+  const uperm=`<div class="card"><h3>Permisos por usuario</h3><div class="tw"><table><thead><tr><th>Usuario</th>${PERMS.map(p=>`<th>${p[1]}</th>`).join('')}</tr></thead><tbody>${users.filter(u=>u.role!=='admin').map(u=>`<tr style="cursor:default"><td>${esc(u.name)} <span class="b">${u.role}</span></td>${PERMS.map(p=>`<td><select style="width:72px" onchange="tgUP('${u.id}','${p[0]}',this.value)">${['','1','0'].map(v=>uo(u.id,p[0],v)).join('')}</select></td>`).join('')}</tr>`).join('')||'<tr><td>Crea usuarios primero</td></tr>'}</tbody></table></div><small style="color:var(--mut)">"Rol" hereda el permiso del rol; "Sí"/"No" lo sobrescribe solo para ese usuario.</small></div>`;
   const rows=allF().map(f=>{const c=fc(f[0]),cu=f[0].startsWith('c_');return `<tr style="cursor:default"><td>${esc(f[1])}${cu?' <span class="b">nuevo</span>':''}</td>${cb(c,'show',f[0])}${cb(c,'req',f[0])}${cb(c,'ast',f[0])}<td>${cfg.formats.map((o,i)=>`<label style="display:inline-block;margin-right:8px;color:var(--tx)"><input type="checkbox" ${(c.fmts||[]).includes(o)?'checked':''} onchange="tgFmt('${f[0]}',${i},this.checked)"> ${esc(o)}</label>`).join('')}</td><td>${cu?`<button class="d" onclick="rmCF('${f[0]}')">Quitar</button>`:''}</td></tr>`}).join('');
   const ncf=`<div class="card"><h3>Crear campo nuevo</h3><div class="g"><div><label>Nombre</label><input id="cf_l"></div><div><label>Tipo</label><select id="cf_t"><option value="text">Texto</option><option value="area">Texto largo</option><option value="date">Fecha</option><option value="bool">Sí/No</option><option value="sel">Lista de opciones</option></select></div><div><label>Sección</label><input id="cf_g" placeholder="Personalizados"></div><div><label>Opciones (separadas por coma)</label><input id="cf_o"></div><div class="w"><label>Aplica a formatos (ninguno = todos)</label>${cfg.formats.map((o,i)=>`<label style="display:inline-block;margin-right:12px;color:var(--tx)"><input type="checkbox" class="cfm" data-i="${i}"> ${esc(o)}</label>`).join('')}</div></div><button class="p" style="margin-top:10px" onclick="addCF()">Crear campo</button></div>`;
-  return `<div class="top"><h2>Configuración</h2></div>${perm}${list('platforms','Plataformas (Five9, Zendesk, ...)')}${list('formats','Formatos (Proyecto, Evolutivo, ...)')}${ncf}
+  return `<div class="top"><h2>Configuración</h2></div>${perm}${uperm}${vcard()}${dcard()}${list('platforms','Plataformas (Five9, Zendesk, ...)')}${list('formats','Formatos (Proyecto, Evolutivo, ...)')}${ncf}
   <div class="card"><h3>Campos del ticket</h3><div class="tw"><table><thead><tr><th>Campo</th><th>Mostrar</th><th>Requerido</th><th>Asistente</th><th>Solo en formatos</th><th></th></tr></thead><tbody><tr style="cursor:default"><td>Estado (status)</td><td><input type="checkbox" ${cfg.fields.status?.show!==false?'checked':''} onchange="tgF('status','show',this.checked)"></td><td colspan="4">—</td></tr>${rows}</tbody></table></div><small style="color:var(--mut)">Sin formatos marcados el campo aparece en todos. Asistente = puede ver y completar el campo. Técnico completa todos los mostrados.</small></div>`}
 const saveCfg=async()=>{const r=await sb.from('config').upsert({id:1,data:cfg});if(r.error)alert(r.error.message);else{await load();if(view==='config')render()}};
 function addC(k){const v=$('#add_'+k).value.trim();if(v&&!cfg[k].includes(v)){cfg[k]=[...cfg[k],v];saveCfg()}}
 function rmC(k,i){cfg[k]=cfg[k].filter((_,j)=>j!==i);saveCfg()}
 function tgF(f,k,v){cfg.fields[f]={...fc(f),[k]:v};saveCfg()}
+function tgUP(u,p,v){const up={...(cfg.userPerms?.[u]||{})};if(v==='')delete up[p];else up[p]=v==='1';cfg.userPerms={...cfg.userPerms,[u]:up};saveCfg()}
 function tgP(r,p,v){cfg.perms[r]={...cfg.perms[r],[p]:v};saveCfg()}
 function tgFmt(f,i,v){const o=cfg.formats[i],m=(fc(f).fmts||[]).filter(x=>x!==o);cfg.fields[f]={...fc(f),fmts:v?[...m,o]:m};saveCfg()}
 function addCF(){const l=$('#cf_l').value.trim();if(!l)return;const key='c_'+Date.now(),opts=$('#cf_o').value.split(',').map(x=>x.trim()).filter(Boolean),fm=[...document.querySelectorAll('.cfm:checked')].map(e=>cfg.formats[+e.dataset.i]);
