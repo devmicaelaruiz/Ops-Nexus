@@ -28,13 +28,14 @@ h3{font-size:13px;margin:0 0 12px;text-transform:uppercase;color:var(--mut);lett
 .row{display:flex;gap:8px;align-items:center;margin-bottom:6px}.row span{flex:1}
 @media(max-width:700px){.app{flex-direction:column}.side{width:100%;display:flex;flex-wrap:wrap;padding:8px}.side h1,.side .me{display:none}}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--bd);margin-bottom:14px;flex-wrap:wrap}.tabs a{padding:8px 14px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent}.tabs a.on{color:var(--ac);border-color:var(--ac);font-weight:600}
+#toasts{position:fixed;right:16px;top:calc(16px + env(safe-area-inset-top,0px));z-index:99;display:flex;flex-direction:column;gap:8px;max-width:320px}.toast{background:var(--card);color:var(--tx);border:1px solid var(--ac);border-left-width:4px;border-radius:8px;padding:10px 12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 .split{display:flex;gap:16px;align-items:flex-start}.lft{flex:1;min-width:0}.chat{width:360px;flex-shrink:0;position:sticky;top:10px}#msgs{overflow-y:auto;max-height:46vh;margin-bottom:10px}.msg{border-bottom:1px solid var(--bd);padding:8px 0;white-space:pre-wrap}.lbl{font-size:11px;color:var(--mut);text-transform:uppercase;margin-top:6px}.br{display:flex;gap:8px;align-items:center;margin-bottom:6px}.bl{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bt{flex:1;background:var(--bd);border-radius:4px;height:14px}.bf{background:var(--ac);height:100%;border-radius:4px}.kp{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}.kp .card{margin:0}.kp b{font-size:26px;display:block}@media(max-width:900px){.split{flex-direction:column}.chat{width:100%;position:static}}
 </style></head><body><div id="root"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 const SUPABASE_URL='https://TU-PROYECTO.supabase.co',SUPABASE_KEY='TU_ANON_PUBLIC_KEY';
-const SCHEMA_REQ=2; // sube este número junto con schema.sql cuando cambie la base
+const SCHEMA_REQ=3; // sube este número junto con schema.sql cuando cambie la base
 let dbv=SCHEMA_REQ;
 const verBanner=()=>dbv>=SCHEMA_REQ?'':`<div class="card" style="border-color:#c0392b">⚠ ${isA()?`La base de datos está desactualizada (versión ${dbv}, la web requiere ${SCHEMA_REQ}). Ejecuta <b>schema.sql</b> en el SQL Editor de Supabase o haz push de la migración.`:'El sistema está en actualización; algunas funciones podrían fallar. Avisa al administrador.'}</div>`;
 const F=[
@@ -48,7 +49,7 @@ const ST=['Nuevo','En análisis','En desarrollo','QA','Entregado','Cerrado'];
 const AST0=['requester','requestedAt','summary','pm','estado'];
 const DEF={platforms:['Five9','Zendesk'],formats:['Proyecto','Evolutivo','Deuda técnica','Demo'],custom:[],userPerms:{},views:[{id:'all',name:'Todos',cols:['n','title','requester','pm','format','platforms','status','dEntrega','upd'],filter:{},who:{roles:['tecnico','asistente'],users:[]}}],dashes:[{id:'gen',name:'General',who:{roles:['tecnico'],users:[]},widgets:[{id:'w1',type:'kpi',title:'Total',by:'total',f:{}},{id:'w2',type:'kpi',title:'Abiertos',by:'open',f:{}},{id:'w3',type:'kpi',title:'Sin actualización',by:'stale',f:{}},{id:'w4',type:'kpi',title:'Entregas en 7 días',by:'soon',f:{}},{id:'w5',type:'bar',title:'Por estado',by:'status',f:{}},{id:'w6',type:'donut',title:'Por formato',by:'format',f:{}},{id:'w7',type:'bar',title:'Por plataforma',by:'platforms',f:{}},{id:'w8',type:'bar',title:'Por PM',by:'pm',f:{}},{id:'w9',type:'list',title:'Tickets sin actualización',by:'',f:{}}]}],perms:{tecnico:{create:true,edit:true,viewAll:true,status:true,delete:false,chat:true,dashboard:true,export:true},asistente:{create:false,edit:true,viewAll:false,status:true,delete:false,chat:true,dashboard:false,export:false}},fields:{...Object.fromEntries(F.map(f=>[f[0],{show:true,req:false,ast:AST0.includes(f[0]),fmts:[]}])),status:{show:true}}};
 const PERMS=[['create','Crear tickets'],['edit','Editar tickets / campos'],['viewAll','Ver todos los tickets'],['status','Cambiar estado'],['delete','Eliminar tickets'],['chat','Chat / actualizaciones'],['dashboard','Ver dashboard'],['export','Exportar PDF']];
-let upd=[],vi='',di='',opn={},db,cfg=DEF,users=[],tickets=[],me=null,view='list',cur=null,err='',q='',fq='',loaded=0,setup=false;
+let notifs=[],upd=[],vi='',di='',opn={},db,cfg=DEF,users=[],tickets=[],me=null,view='list',cur=null,err='',q='',fq='',loaded=0,setup=false;
 const $=s=>document.querySelector(s),R=document.getElementById('root');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hash=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('pm:'+s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -67,8 +68,8 @@ async function boot(){
   const {data:{user}}=await sb.auth.getUser();
   const {data:p}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
   if(!p){await sb.auth.signOut();err='Tu usuario no tiene perfil. Contacta al admin.';return render()}
-  me=p;const sv=await sb.rpc('schema_version');dbv=sv.error?0:sv.data;await load();render();
-  clearInterval(window._iv);window._iv=setInterval(async()=>{if(me&&view==='list'&&!document.activeElement?.matches('input,select')){await load();render()}},30000)}
+  me=p;const sv=await sb.rpc('schema_version');dbv=sv.error?0:sv.data;await load();await loadN();subN();render();
+  clearInterval(window._iv);window._iv=setInterval(async()=>{if(me){await loadN();updBadge()}if(me&&view==='list'&&!document.activeElement?.matches('input,select')){await load();render()}},30000)}
 async function load(){
   const [c,u,t]=await Promise.all([sb.from('config').select('data').eq('id',1).maybeSingle(),sb.from('profiles').select('*'),sb.from('tickets').select('*').order('n',{ascending:false})]);
   const d=c.data?.data;if(d)cfg={...DEF,...d,custom:d.custom||[],userPerms:d.userPerms||{},views:d.views||DEF.views,dashes:d.dashes||DEF.dashes,fields:{...DEF.fields,...(d.fields||{})},perms:{tecnico:{...DEF.perms.tecnico,...(d.perms?.tecnico||{})},asistente:{...DEF.perms.asistente,...(d.perms?.asistente||{})}}};
@@ -78,8 +79,8 @@ function fieldsFor(t){return allF().filter(f=>fc(f[0]).show&&inFmt(f[0],t)&&(!is
 function render(){
   if(!me){return loginView()}
   const nav=(v,l)=>`<a class="${view===v?'on':''}" onclick="go('${v}')">${l}</a>`;
-  let body=view==='dash'?dashView():view==='ticket'||view==='new'?ticketView():view==='users'?usersView():view==='config'?configView():listView();
-  R.innerHTML=`<div class="app"><div class="side"><h1>◼ PM Desk</h1>${nav('list','Tickets')}${can('dashboard')?nav('dash','Dashboard'):''}${isA()?nav('users','Usuarios')+nav('config','Configuración'):''}<a onclick="logout()">Salir</a><div class="me">${esc(me.name)}<br>Rol: ${me.role}</div></div><div class="main">${verBanner()}${body}</div></div>`}
+  let body=view==='notifs'?notifView():view==='dash'?dashView():view==='ticket'||view==='new'?ticketView():view==='users'?usersView():view==='config'?configView():listView();
+  R.innerHTML=`<div class="app"><div class="side"><h1>◼ PM Desk</h1>${nav('list','Tickets')}<a class="${view==='notifs'?'on':''}" onclick="go('notifs')">🔔 Avisos ${nbHTML()}</a>${can('dashboard')?nav('dash','Dashboard'):''}${isA()?nav('users','Usuarios')+nav('config','Configuración'):''}<a onclick="logout()">Salir</a><div class="me">${esc(me.name)}<br>Rol: ${me.role}</div></div><div class="main">${verBanner()}${body}</div></div>`}
 function go(v){view=v;cur=null;err='';render()}
 function loginView(){
   R.innerHTML=`<div class="login"><div class="card"><h2>Iniciar sesión</h2><label>Email</label><input id="lu" type="email"><label style="margin-top:8px">Contraseña</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')doLogin()"><div class="err">${esc(err)}</div><button class="p" onclick="doLogin()">Entrar</button></div></div>`}
@@ -87,7 +88,7 @@ async function doLogin(){
   const {error}=await sb.auth.signInWithPassword({email:$('#lu').value.trim(),password:$('#lp').value});
   if(error){err='Credenciales incorrectas';return loginView()}
   err='';view='list';await boot()}
-async function logout(){await sb.auth.signOut();me=null;clearInterval(window._iv);render()}
+async function logout(){if(window._ch)sb.removeChannel(window._ch);await sb.auth.signOut();me=null;clearInterval(window._iv);render()}
 const okWho=x=>isA()||(x.who?.roles||[]).includes(me.role)||(x.who?.users||[]).includes(me.id);
 const myViews=()=>isA()?[{id:'__all',name:'Todos (admin)',cols:DEF.views[0].cols,filter:{},who:{}},...cfg.views]:cfg.views.filter(okWho);
 const myDash=()=>isA()?cfg.dashes:cfg.dashes.filter(okWho);
@@ -195,6 +196,26 @@ function dcard(){
   <button onclick="up('dashes',${i},x=>{x.widgets.push({id:'w'+Date.now(),type:'bar',title:'Nuevo gráfico',by:'status',f:{}})})">+ Agregar widget</button>
   <div style="margin-top:10px">${audience('dashes',i,d)}</div><div style="margin-top:10px"><button class="d" onclick="if(confirm('¿Eliminar dashboard?')){cfg.dashes.splice(${i},1);saveCfg()}">Eliminar dashboard</button></div>`)).join('')}
   <button onclick="cfg.dashes=[...cfg.dashes,{id:'d'+Date.now(),name:'Nuevo dashboard',widgets:[],who:{roles:[],users:[]}}];saveCfg()">+ Nuevo dashboard</button><br><small style="color:var(--mut)">Cada usuario ve solo los dashboards asignados a su rol o usuario (además necesita el permiso "Ver dashboard").</small></div>`}
+const KN={comment:'Nuevo comentario',ticket_new:'Nuevo ticket',invited:'Te agregaron al ticket'};
+const unreadN=()=>notifs.filter(n=>!n.read).length;
+const nbHTML=()=>{const n=unreadN();return `<span class="b" id="nb" style="display:${n?'inline-block':'none'}">${n}</span>`};
+function updBadge(){const e=$('#nb');if(e){const n=unreadN();e.textContent=n;e.style.display=n?'inline-block':'none'}}
+async function loadN(){const r=await sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(50);if(!r.error)notifs=r.data||[]}
+const markRead=n=>{if(!n.read){n.read=true;updBadge();sb.from('notifications').update({read:true}).eq('id',n.id)}};
+function subN(){if(window._ch)sb.removeChannel(window._ch);
+  window._ch=sb.channel('n-'+me.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+me.id},p=>{
+    const n=p.new;notifs=[n,...notifs];updBadge();
+    if(view==='ticket'&&cur?.id===n.ticket_id){markRead(n);if(n.kind==='comment')loadUpd(cur.id)}else toast(n);
+    if(view==='notifs')render();
+    load().then(()=>{if(view==='list'&&!document.activeElement?.matches('input,select,textarea'))render()})}).subscribe()}
+function toast(n){let b=$('#toasts');if(!b){b=document.createElement('div');b.id='toasts';document.body.appendChild(b)}
+  const d=document.createElement('div');d.className='toast';d.innerHTML=`<b>${KN[n.kind]||esc(n.kind)}</b><br>#${n.ticket_n} ${esc(n.ticket_title)}<br><small>${esc(n.by_name||'')}${n.body?': '+esc(n.body):''}</small>`;
+  d.onclick=()=>{d.remove();openN(n.id)};b.appendChild(d);setTimeout(()=>d.remove(),8000);
+  if(document.hidden&&window.Notification&&Notification.permission==='granted')new Notification(`${KN[n.kind]||''} #${n.ticket_n}`,{body:`${n.ticket_title||''} ${n.body||''}`})}
+async function openN(id){const n=notifs.find(x=>x.id===id);if(!n)return;markRead(n);await load();const t=tickets.find(x=>x.id===n.ticket_id);if(t)open_(t.id);else alert('No tienes acceso a este ticket o ya fue eliminado.')}
+async function markAll(){notifs.forEach(n=>n.read=true);await sb.from('notifications').update({read:true}).eq('read',false);render()}
+function notifView(){return `<div class="top"><h2>Avisos</h2><button onclick="markAll()">Marcar todas como leídas</button>${window.Notification&&Notification.permission==='default'?'<button onclick="Notification.requestPermission().then(render)">Activar avisos del navegador</button>':''}</div>
+  <div class="card" style="padding:0">${notifs.map(n=>`<div style="padding:10px 14px;border-bottom:1px solid var(--bd);cursor:pointer;${n.read?'':'background:rgba(31,115,183,.1)'}" onclick="openN('${n.id}')"><b>${KN[n.kind]||esc(n.kind)}</b> · #${n.ticket_n} ${esc(n.ticket_title)} ${n.read?'':'<span class="b">nuevo</span>'}<br><small style="color:var(--mut)">${esc(n.by_name||'')}${n.body?': '+esc(n.body):''} · ${new Date(n.created_at).toLocaleString()}</small></div>`).join('')||'<p style="padding:16px;color:var(--mut)">Sin avisos.</p>'}</div>`}
 async function exportPDF(del){
   const t=cur;if(!upd.length)await loadUpd(t.id);
   const d=new window.jspdf.jsPDF({unit:'pt',format:'a4'}),W=595,M=40;let y=95;const chk=h=>{if(y+h>800){d.addPage();y=50}};
