@@ -34,7 +34,7 @@ h3{font-size:13px;margin:0 0 12px;text-transform:uppercase;color:var(--mut);lett
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-const SUPABASE_URL='https://TU-PROYECTO.supabase.co',SUPABASE_KEY='TU_ANON_PUBLIC_KEY';
+const SUPABASE_URL='https://rimvxtaqeqjoffzwircd.supabase.co',SUPABASE_KEY='sb_publishable_iHtvkRXlI1okTnubeAb_aA_a5xXomXM';
 const SCHEMA_REQ=3; // sube este número junto con schema.sql cuando cambie la base
 let dbv=SCHEMA_REQ;
 const verBanner=()=>dbv>=SCHEMA_REQ?'':`<div class="card" style="border-color:#c0392b">⚠ ${isA()?`La base de datos está desactualizada (versión ${dbv}, la web requiere ${SCHEMA_REQ}). Ejecuta <b>schema.sql</b> en el SQL Editor de Supabase o haz push de la migración.`:'El sistema está en actualización; algunas funciones podrían fallar. Avisa al administrador.'}</div>`;
