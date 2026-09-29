@@ -91,7 +91,8 @@ async function doLogin(){
   err='';view='list';await boot()}
 async function logout(){if(window._ch)sb.removeChannel(window._ch);await sb.auth.signOut();me=null;clearInterval(window._iv);render()}
 const okWho=x=>isA()||(x.who?.roles||[]).includes(me.role)||(x.who?.users||[]).includes(me.id);
-const myViews=()=>isA()?[{id:'__all',name:'Todos (admin)',cols:DEF.views[0].cols,filter:{},who:{}},...cfg.views]:cfg.views.filter(okWho);
+const noFilter=f=>!f||!(f.status||f.format||f.client||f.platform||f.stale||f.mine);
+const myViews=()=>{if(!isA())return cfg.views.filter(okWho);return cfg.views.some(v=>noFilter(v.filter))?cfg.views:[...cfg.views,{id:'__all',name:'Todos (admin)',cols:DEF.views[0].cols,filter:{},who:{}}]};
 const myDash=()=>isA()?cfg.dashes:cfg.dashes.filter(okWho);
 const matchV=(t,f)=>(!f.status||t.status===f.status)&&(!f.format||t.format===f.format)&&(!f.platform||(t.platforms||[]).includes(f.platform))&&(!f.client||t.client===f.client)&&(!f.stale||stale(t))&&(!f.mine||t.pm===me.id||(t.assistants||[]).includes(me.id));
 const colDefs=()=>[['n','#'],['title','Asunto'],['status','Estado'],['upd','Actualización'],['assistants','Asistentes invitados']].concat(allF().map(f=>[f[0],f[1]]));
